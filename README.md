@@ -1,0 +1,2 @@
+# Python bindings for ai-companion (only backend, without WebUI)
+At the moment, it is highly not recommended to use it in your projects - I recommend waiting until a usable version comes out, or using [ai-companion](https://github.com/Hukasx0/ai-companion)
