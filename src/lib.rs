@@ -54,7 +54,7 @@ fn init(companion_name: String, companion_persona: String, example_dialogue: Str
     Ok(())
 }
 
-fn load_progress_callback(progress: LoadProgress) {}
+fn load_progress_callback(_: LoadProgress) {}
 
 #[pyfunction]
 fn prompt(text: String, model_path: String) -> PyResult<String> {
@@ -430,9 +430,9 @@ fn change_roleplay(enable: bool) -> PyResult<()> {
     Ok(())
 }
 
-#[derive(Clone)]
-#[pyclass]
-struct CharacterClass {
+// works with https://zoltanai.github.io/character-editor/
+#[derive(Deserialize)]
+struct CharacterJson {
     name: String,
     description: String,
     first_mes: String,
@@ -440,8 +440,14 @@ struct CharacterClass {
 }
 
 #[pyfunction]
-fn import_character_class(character_class: CharacterClass) -> PyResult<()> {
-    match Database::import_companion(&character_class.name, &character_class.description, &character_class.mes_example, &character_class.first_mes) {
+fn import_character_json(character_json_text: String) -> PyResult<()> {
+    let character_json: CharacterJson = match serde_json::from_str(&character_json_text) {
+        Ok(v) => v,
+        Err(e) => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!("Error while parsing provided text as json: {:?}", e)));
+        }
+    };
+    match Database::import_companion(&character_json.name, &character_json.description, &character_json.mes_example, &character_json.first_mes) {
         Ok(_) => Ok(()),
         Err(e) => {
             return Err(pyo3::exceptions::PyValueError::new_err(format!("Error while importing character via character class to sqlite database {:?}", e)));
@@ -494,22 +500,26 @@ fn import_character_card(character_card_path: String) -> PyResult<()> {
 }
 
 
-#[derive(Clone)]
-#[pyclass]
-struct MessagesClass {
+#[derive(Deserialize, Serialize)]
+struct MessagesJson {
     messages: Vec<MessageImport>,
 }
 
-#[derive(Clone)]
-#[pyclass]
+#[derive(Deserialize, Serialize)]
 struct MessageImport {
     ai: bool,
     text: String,
 }
 
 #[pyfunction]
-fn import_messages_json(messages_class: MessagesClass) -> PyResult<()> {
-    let mut messages_iter = messages_class.messages.iter();
+fn import_messages_json(messages_json_text: String) -> PyResult<()> {
+    let messages_json: MessagesJson = match serde_json::from_str(&messages_json_text) {
+        Ok(v) => v,
+        Err(e) => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!("Error while parsing provided text as json: {:?}", e)));
+        }
+    };
+    let mut messages_iter = messages_json.messages.iter();
     for message in messages_iter.to_owned() {
         match Database::add_message(&message.text, message.ai) {
             Ok(_) => {},
@@ -538,14 +548,14 @@ fn import_messages_json(messages_class: MessagesClass) -> PyResult<()> {
 }
 
 #[pyfunction]
-fn get_messages_class() -> PyResult<MessagesClass> {
+fn get_messages_json() -> PyResult<String> {
     let database_messages = match Database::get_messages() {
         Ok(m) => m,
         Err(e) => {
-            return Err(pyo3::exceptions::PyValueError::new_err(format!("Error while fetching messages as messages class: {:?}", e)));
+            return Err(pyo3::exceptions::PyValueError::new_err(format!("Error while fetching messages from json text: {:?}", e)));
         }
     };
-    let messages: MessagesClass = MessagesClass { messages: database_messages.iter().map(|message|
+    let messages: MessagesJson = MessagesJson { messages: database_messages.iter().map(|message|
         MessageImport {
             ai: match message.ai.as_str() {
                 "true" => true,
@@ -555,7 +565,13 @@ fn get_messages_class() -> PyResult<MessagesClass> {
             text: message.text.clone(),
         }
     ).collect(), };
-    Ok(messages)
+    let json_messages = match serde_json::to_string(&messages) {
+        Ok(v) => v,
+        Err(e) => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!("Error while encoding messages as json: {:?}", e)));
+        },
+    };
+    Ok(json_messages)
 }
 
 #[pymodule]
@@ -582,9 +598,9 @@ fn ai_companion_py(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(change_longterm_memory_limit, m)?)?;
     m.add_function(wrap_pyfunction!(change_shortterm_memory_limit, m)?)?;
     m.add_function(wrap_pyfunction!(change_roleplay, m)?)?;
-    m.add_function(wrap_pyfunction!(import_character_class, m)?)?;
+    m.add_function(wrap_pyfunction!(import_character_json, m)?)?;
     m.add_function(wrap_pyfunction!(import_character_card, m)?)?;
     m.add_function(wrap_pyfunction!(import_messages_json, m)?)?;
-    m.add_function(wrap_pyfunction!(get_messages_class, m)?)?;
+    m.add_function(wrap_pyfunction!(get_messages_json, m)?)?;
     Ok(())
 }
