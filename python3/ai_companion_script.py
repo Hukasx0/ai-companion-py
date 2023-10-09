@@ -8,7 +8,7 @@ AI_MODEL_LINK = "https://huggingface.co/TheBloke/Wizard-Vicuna-7B-Uncensored-GGM
 os.makedirs("models/", exist_ok=True)
 urllib.request.urlretrieve(AI_MODEL_LINK, "models/Wizard-Vicuna-7B.bin")
 
-import ai_companion_py as companion
+import ai_companion_py
 
 # Companion data
 
@@ -33,9 +33,13 @@ ROLEPLAY = True
 USER_NAME = "user"
 USER_PERSONA = "{{user}} is chatting with {{char}} using ai-companion python library"
 
-companion.init(COMPANION_NAME, COMPANION_PERSONA, EXAMPLE_DIALOGUE, FIRST_MESSAGE, LONG_TERM_MEMORY_LIMIT, SHORT_TERM_MEMORY_LIMIT, ROLEPLAY, USER_NAME, USER_PERSONA)
+character = ai_companion_py.init()
+character.load_model("models/Wizard-Vicuna-7B.bin")
+
+character.change_companion_data(COMPANION_NAME, COMPANION_PERSONA, EXAMPLE_DIALOGUE, FIRST_MESSAGE, LONG_TERM_MEMORY_LIMIT, SHORT_TERM_MEMORY_LIMIT, ROLEPLAY)
+character.change_user_data(USER_NAME, USER_PERSONA)
 
 while True:
     user_input = input("Your prompt to ai: ")
-    response = companion.prompt(user_input, "models/Wizard-Vicuna-7B.bin")
+    response = character.prompt(user_input)
     print(COMPANION_NAME+": "+response)
