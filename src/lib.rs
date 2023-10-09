@@ -22,7 +22,7 @@ impl Companion {
         if ai_model_path.ends_with(".bin") {
             self.is_llama2 = ai_model_path.contains("llama");
         } else {
-            return Err(pyo3::exceptions::PyValueError::new_err(""));
+            return Err(pyo3::exceptions::PyValueError::new_err("Error while loading ai model, make sure that the path to the ai model is correct, that it is a valid GGML model and that the file has a .bin extension"));
         }
         let llama = llm::load::<llm::models::Llama>(
             std::path::Path::new(ai_model_path),
@@ -510,12 +510,12 @@ fn init() -> PyResult<Companion> {
     match Database::create() {
         Ok(_) => {},
         
-        Err(e) => { return Err(pyo3::exceptions::PyValueError::new_err("")); }
+        Err(e) => { return Err(pyo3::exceptions::PyValueError::new_err(&format!("Error while connecting to sqlite database:, {}", e))); }
     }
 
     match VectorDatabase::connect() {
         Ok(_) => { }
-        Err(e) => { return Err(pyo3::exceptions::PyValueError::new_err(""));}
+        Err(e) => { return Err(pyo3::exceptions::PyValueError::new_err(&format!("Error while connecting to long-term memory (tantivy): {}", e)));}
     }
 
     Ok(Companion {
