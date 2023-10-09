@@ -510,12 +510,16 @@ fn init() -> PyResult<Companion> {
     match Database::create() {
         Ok(_) => {},
         
-        Err(e) => { return Err(pyo3::exceptions::PyValueError::new_err(&format!("Error while connecting to sqlite database:, {}", e))); }
+        Err(e) => {
+            let error_msg = format!("Error while connecting to sqlite database:, {}", e);
+            return Err(pyo3::exceptions::PyValueError::new_err(error_msg)); }
     }
 
     match VectorDatabase::connect() {
         Ok(_) => { }
-        Err(e) => { return Err(pyo3::exceptions::PyValueError::new_err(&format!("Error while connecting to long-term memory (tantivy): {}", e)));}
+        Err(e) => { 
+            let error_msg = format!("Error while connecting to long-term memory (tantivy): {}", e);
+            return Err(pyo3::exceptions::PyValueError::new_err(error_msg)); }
     }
 
     Ok(Companion {
