@@ -1,20 +1,15 @@
 use pyo3::prelude::*;
-use llm::{Model, LoadProgress, models::Llama};
-use std::io::{Write, Read};
+use llm::LoadProgress;
+use std::io::Read;
 use std::fs::File;
-use chrono::{DateTime, Local};
 use base64::{Engine, engine::GeneralPurpose, engine::GeneralPurposeConfig, alphabet::STANDARD};
 use serde::{Deserialize, Serialize};
 mod database;
-use database::{Database, Message, CompanionData, UserData};
+use database::{Database, CompanionData, UserData};
 mod vectordb;
 use vectordb::VectorDatabase;
-
-#[pyclass]
-struct Companion {
-    ai_model: Option<Llama>,
-    is_llama2: bool,
-}
+mod prompt;
+use prompt::{prompt_rs, Companion};
 
 #[pymethods]
 impl Companion {
@@ -41,144 +36,32 @@ impl Companion {
                 eprintln!("Error while adding message to database/short-term memory: {}", e);
             },
         };
-        let vector = match VectorDatabase::connect() {
-            Ok(vd) => vd,
-            Err(e) => {
-                eprintln!("Error while connecting to tantivy: {}", e);
-                panic!();
-            }
-        };
-        let local: DateTime<Local> = Local::now();
-        let formatted_date = local.format("* at %A %d.%m.%Y %H:%M *\n").to_string();
-
-        let llama = self.ai_model.as_ref().unwrap();
-        
-        let mut session = llama.start_session(Default::default());
-        println!("Generating ai response...");
-        let companion: CompanionData = match Database::get_companion_data() {
-            Ok(cd) => cd,
-            Err(e) => {
-                eprintln!("Error while getting companion data from sqlite database: {}", e);
-                panic!();
-            }
-        };
-        let user: UserData = match Database::get_user_data() {
-            Ok(ud) => ud,
-            Err(e) => {
-                eprintln!("Error while getting user data from sqlite database: {}", e);
-                panic!();
-            }
-        };
-        let mut base_prompt: String;
-        let mut rp: &str = "";
-        if companion.roleplay == 1 {
-            rp = "gestures and other non-verbal actions are written between asterisks (for example, *waves hello* or *moves closer*)";
-        }
-        if self.is_llama2 {
-            base_prompt = 
-            format!("<<SYS>>\nYou are {}, {}\nyou are talking with {}, {} is {}\n{}\n[INST]\n{}\n[/INST]",
-                    companion.name, companion.persona.replace("{{char}}", &companion.name).replace("{{user}}", &user.name), user.name, user.name, user.persona.replace("{{char}}", &companion.name).replace("{{user}}", &user.name), rp, companion.example_dialogue.replace("{{char}}", &companion.name).replace("{{user}}", &user.name));
-        } else {
-            base_prompt = 
-            format!("Text transcript of a conversation between {} and {}. {}\n{}'s Persona: {}\n{}'s Persona: {}\n<START>{}\n<START>\n", 
-                                                user.name, companion.name, rp, user.name, user.persona.replace("{{char}}", &companion.name).replace("{{user}}", &user.name), companion.name, companion.persona.replace("{{char}}", &companion.name).replace("{{user}}", &user.name), companion.example_dialogue.replace("{{char}}", &companion.name).replace("{{user}}", &user.name));
-        }
-        let abstract_memory: Vec<String> = match vector.get_matches(&text, companion.long_term_mem) {
-            Ok(m) => m,
-            Err(e) => {
-                eprintln!("Error while getting messages from long-term memory: {}", e);
-                panic!();
-            }
-        };
-        for message in abstract_memory {
-            base_prompt += &message.replace("{{char}}", &companion.name).replace("{{user}}", &user.name);
-        }
-        let ai_memory: Vec<Message> = match Database::get_x_msgs(companion.short_term_mem) {
-            Ok(msgs) => msgs,
-            Err(e) => {
-                eprintln!("Error while getting messages from database/short-term memory: {}", e);
-                panic!();
-            }
-        };
-        if self.is_llama2 {
-            for message in ai_memory {
-                let prefix = if message.ai == "true" { &companion.name } else { &user.name };
-                let text = message.text;
-                let formatted_message = format!("{}: {}\n", prefix, text);
-                base_prompt += &("[INST]".to_owned() + &formatted_message + "[/INST]\n");
-            }
-            base_prompt += "<</SYS>>";
-        } else {
-            for message in ai_memory {
-                let prefix = if message.ai == "true" { &companion.name } else { &user.name };
-                let text = message.text;
-                let formatted_message = format!("{}: {}\n", prefix, text);
-                base_prompt += &formatted_message;
-            }
-        }
-        let mut end_of_generation = String::new();
-        let eog = format!("\n{}:", user.name);
-        let res = session.infer::<std::convert::Infallible>(
-            llama,
-            &mut rand::thread_rng(),
-            &llm::InferenceRequest {
-                prompt: llm::Prompt::Text(&format!("{}{}:", &base_prompt, companion.name)),
-                parameters: &llm::InferenceParameters::default(),
-                play_back_previous_tokens: false,
-                maximum_token_count: None,
-            },
-            &mut Default::default(),
-            |t| {
-                match t {
-                    llm::InferenceResponse::SnapshotToken(_) => {/*print!("{token}");*/}
-                    llm::InferenceResponse::PromptToken(_) => {/*print!("{token}");*/}
-                    llm::InferenceResponse::InferredToken(token) => {
-                        //x = x.clone()+&token;
-                        end_of_generation.push_str(&token);
-                        print!("{token}");
-                        if end_of_generation.contains(&eog) {
-                            return Ok(llm::InferenceFeedback::Halt);          
-                        }
-                    }
-                    llm::InferenceResponse::EotToken => {}
-                }
-                std::io::stdout().flush().unwrap();
-                Ok(llm::InferenceFeedback::Continue)
-            }
-        );
-        let x: String = end_of_generation.replace(&eog, "");
-        match res {
-            Ok(result) => println!("\n\nInference stats:\n{result}"),
-            Err(err) => println!("\n{err}"),
-        }
-        let companion_text = x
-        .split(&format!("\n{}: ", &companion.name))
-        .next()
-        .unwrap_or("");
-        match Database::add_message(companion_text, true) {
-            Ok(_) => {},
-            Err(e) => {
-                return Err(pyo3::exceptions::PyValueError::new_err(format!("Error while adding message to database/short-term memory: {:?}", e)));
-            },
-        };
-        match vector.add_entry(&format!("{}{}: {}\n{}: {}\n", formatted_date, "{{user}}", text, "{{char}}", &companion_text)) {
-            Ok(_) => {},
-            Err(e) => {
-                return Err(pyo3::exceptions::PyValueError::new_err(format!("Error while adding message to long-term memory: {:?}", e)));
-            },
-        };
-        Ok(companion_text.to_string())
+       match prompt_rs(self, &text) {
+        Ok(v) => Ok(v),
+        Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e))
+       }
     }
 
-    #[staticmethod]
-    fn get_messages() -> PyResult<Vec<Message>> {
-        let messages: Vec<Message> = match Database::get_messages() {
-            Ok(msgs) => msgs,
+    fn regenerate_message(&self) -> PyResult<String> {
+        match Database::remove_latest_message() {
+            Ok(_) => {},
             Err(e) => {
-                return Err(pyo3::exceptions::PyValueError::new_err(format!("Error while getting messages from sqlite database: {:?}", e)));
-            },
+                let error_msg = format!("Error while removing latest message from sqlite database: {}", e);
+                return Err(pyo3::exceptions::PyValueError::new_err(error_msg));
+            }
+        }
+        let previous_prompt = match Database::get_x_msgs(1) {
+            Ok(v) => v,
+            Err(e) => {
+                let error_msg = format!("Error while fetching previous prompt from sqlite database: {}", e);
+                return Err(pyo3::exceptions::PyValueError::new_err(error_msg));
+            }
         };
-        Ok(messages)
+        let previous_prompt_str = &previous_prompt[0].text;
+        match prompt_rs(self, previous_prompt_str) {
+            Ok(text) => Ok(text),
+            Err(error) => Err(pyo3::exceptions::PyValueError::new_err(error))
+        }
     }
 
     #[staticmethod]
@@ -198,6 +81,18 @@ impl Companion {
             Ok(_) => {},
             Err(e) => {
                 return Err(pyo3::exceptions::PyValueError::new_err(format!("Error while removing message from sqlite database: {:?}", e)));
+            },
+        };
+        Ok(())
+    }
+
+    #[staticmethod]
+    fn edit_message(new_text: &str, id: u32) -> PyResult<()> {
+        match Database::modify_message(new_text, id) {
+            Ok(_) => {},
+            Err(e) => {
+                let error_msg = format!("Error while removing message from sqlite database: {}", e);
+                return Err(pyo3::exceptions::PyValueError::new_err(error_msg));
             },
         };
         Ok(())
