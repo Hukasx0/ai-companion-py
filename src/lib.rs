@@ -54,7 +54,6 @@ impl Companion {
         let llama = self.ai_model.as_ref().unwrap();
         
         let mut session = llama.start_session(Default::default());
-        let x: String;
         println!("Generating ai response...");
         let companion: CompanionData = match Database::get_companion_data() {
             Ok(cd) => cd,
@@ -117,7 +116,7 @@ impl Companion {
                 base_prompt += &formatted_message;
             }
         }
-        let mut endOfGeneration = String::new();
+        let mut end_of_generation = String::new();
         let eog = format!("\n{}:", user.name);
         let res = session.infer::<std::convert::Infallible>(
             llama,
@@ -135,9 +134,9 @@ impl Companion {
                     llm::InferenceResponse::PromptToken(_) => {/*print!("{token}");*/}
                     llm::InferenceResponse::InferredToken(token) => {
                         //x = x.clone()+&token;
-                        endOfGeneration.push_str(&token);
+                        end_of_generation.push_str(&token);
                         print!("{token}");
-                        if endOfGeneration.contains(&eog) {
+                        if end_of_generation.contains(&eog) {
                             return Ok(llm::InferenceFeedback::Halt);          
                         }
                     }
@@ -147,7 +146,7 @@ impl Companion {
                 Ok(llm::InferenceFeedback::Continue)
             }
         );
-        x = endOfGeneration.replace(&eog, "");
+        let x: String = end_of_generation.replace(&eog, "");
         match res {
             Ok(result) => println!("\n\nInference stats:\n{result}"),
             Err(err) => println!("\n{err}"),
@@ -206,30 +205,26 @@ impl Companion {
 
     #[staticmethod]
     fn fetch_companion_data() -> PyResult<CompanionData> {
-        let companionData: CompanionData;
+        let companion_data: CompanionData =
         match Database::get_companion_data() {
-            Ok(companion_data) => {
-                companionData = companion_data
-            },
+            Ok(c_d) => c_d,
             Err(e) => {
                 return Err(pyo3::exceptions::PyValueError::new_err(format!("Error while getting companion data from sqlite database: {:?}", e)));
             },
         };
-        Ok(companionData)
+        Ok(companion_data)
     }
 
     #[staticmethod]
     fn fetch_user_data() -> PyResult<UserData> {
-        let userData: UserData;
+        let user_data: UserData =
         match Database::get_user_data() {
-            Ok(user_data) => {
-                userData = user_data
-            },
+            Ok(u_d) => u_d,
             Err(e) => {
                 return Err(pyo3::exceptions::PyValueError::new_err(format!("Error while getting user data from sqlite database: {:?}", e)));
             },
         };
-        Ok(userData)
+        Ok(user_data)
     }
 
     #[staticmethod]
@@ -399,9 +394,7 @@ impl Companion {
         };
         match Database::import_companion(&character_json.name, &character_json.description, &character_json.mes_example, &character_json.first_mes) {
             Ok(_) => Ok(()),
-            Err(e) => {
-                return Err(pyo3::exceptions::PyValueError::new_err(format!("Error while importing character via character class to sqlite database {:?}", e)));
-            },
+            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("Error while importing character via character class to sqlite database {:?}", e))),
         }
     }
 
@@ -503,7 +496,28 @@ impl Companion {
         };
         Ok(json_messages)
     }
+
+    #[staticmethod]
+    fn get_character_json() -> PyResult<String> {
+        let companion_data = match Database::get_companion_data() {
+            Ok(m) => m,
+            Err(e) => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!("Error while fetching companion data as json: {:?}", e)));
+            }
+        };
+        let character_data: CharacterJson = CharacterJson {
+            name: companion_data.name,
+            description: companion_data.persona,
+            first_mes: companion_data.first_message,
+            mes_example: companion_data.example_dialogue,
+        };
+        match serde_json::to_string_pretty(&character_data) {
+            Ok(v) => Ok(v),
+            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("Error while encoding companion data as json: {:?}", e))),
+        }
+    }
 }
+
 
 #[pyfunction]
 fn init() -> PyResult<Companion> {
@@ -531,7 +545,8 @@ fn init() -> PyResult<Companion> {
 fn load_progress_callback(_: LoadProgress) {}
 
 // works with https://zoltanai.github.io/character-editor/
-#[derive(Deserialize)]
+// and with https://github.com/Hukasx0/aichar
+#[derive(Serialize, Deserialize)]
 struct CharacterJson {
     name: String,
     description: String,

@@ -226,11 +226,13 @@ impl Database {
         Ok(())
     }
 
+    /*
     pub fn change_companion_avatar(path: &str) -> Result<(), Error> {
         let con = Connection::open("companion.db")?;
         con.execute(&format!("UPDATE companion SET avatar_path=\"{}\"", path), [])?;
         Ok(())
     }
+    */
 
     pub fn import_companion(name: &str, persona: &str, example_dialogue: &str, first_message: &str) -> Result<(), Error> {
         let con = Connection::open("companion.db")?;
