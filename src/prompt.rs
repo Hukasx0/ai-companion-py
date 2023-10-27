@@ -56,21 +56,23 @@ pub fn prompt_rs(companion_py: &Companion, text_prompt: &str) -> Result<String, 
         format!("Text transcript of a conversation between {} and {}. {}\n{}'s Persona: {}\n{}'s Persona: {}\n<START>{}\n<START>\n", 
                                             user.name, companion.name, rp, user.name, user.persona.replace("{{char}}", &companion.name).replace("{{user}}", &user.name), companion.name, companion.persona.replace("{{char}}", &companion.name).replace("{{user}}", &user.name), companion.example_dialogue.replace("{{char}}", &companion.name).replace("{{user}}", &user.name));
     }
-    let abstract_memory: Vec<String> = match vector.get_matches(text_prompt, companion.long_term_mem) {
-        Ok(m) => m,
-        Err(e) => {
-            eprintln!("Error while getting messages from long-term memory: {}", e);
-            panic!();
-        }
-    };
+    let mut abstract_memory: Vec<String> = Vec::new();
+    if companion.long_term_mem != 0 {
+        abstract_memory = match vector.get_matches(text_prompt, companion.long_term_mem) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("Error while getting messages from long-term memory: {}", e);
+                Vec::new() // If there is a error with long-term memory, just display error, don't interrupt generation
+            }
+        };
+    }
     for message in abstract_memory {
         base_prompt += &message.replace("{{char}}", &companion.name).replace("{{user}}", &user.name);
     }
     let ai_memory: Vec<Message> = match Database::get_x_msgs(companion.short_term_mem) {
         Ok(msgs) => msgs,
         Err(e) => {
-            eprintln!("Error while getting messages from database/short-term memory: {}", e);
-            panic!();
+            return Err(format!("Error while getting messages from database/short-term memory: {}", e));
         }
     };
     if companion_py.is_llama2 {
