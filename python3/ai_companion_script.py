@@ -2,13 +2,19 @@
 
 import os
 import urllib.request
-
-AI_MODEL_LINK = "https://huggingface.co/TheBloke/Wizard-Vicuna-7B-Uncensored-GGML/resolve/main/Wizard-Vicuna-7B-Uncensored.ggmlv3.q4_K_M.bin"
-
-os.makedirs("models/", exist_ok=True)
-urllib.request.urlretrieve(AI_MODEL_LINK, "models/Wizard-Vicuna-7B.bin")
+import torch   # to check if cuda is available
 
 import ai_companion_py
+
+AI_MODEL_LINK = "https://huggingface.co/TheBloke/Wizard-Vicuna-7B-Uncensored-GGML/resolve/main/Wizard-Vicuna-7B-Uncensored.ggmlv3.q4_K_M.bin"
+MODEL_PATH = "models/Wizard-Vicuna-7B-Uncensored.ggmlv3.q4_K_M.bin"
+
+if not os.path.exists(MODEL_PATH):
+    print("Downloading the model...")
+    os.makedirs("models/", exist_ok=True)
+    urllib.request.urlretrieve(AI_MODEL_LINK, MODEL_PATH)
+    print("The model has been successfully downloaded.")
+
 
 # Companion data
 
@@ -34,7 +40,13 @@ USER_NAME = "user"
 USER_PERSONA = "{{user}} is chatting with {{char}} using ai-companion python library"
 
 character = ai_companion_py.init()
-character.load_model("models/Wizard-Vicuna-7B.bin")
+use_gpu = False
+if torch.cuda.is_available():
+    use_gpu = True
+    print("Loading LLM to GPU...")
+else:
+    print("Loading LLM to CPU...")
+character.load_model(MODEL_PATH, use_gpu)
 
 character.change_companion_data(COMPANION_NAME, COMPANION_PERSONA, EXAMPLE_DIALOGUE, FIRST_MESSAGE, LONG_TERM_MEMORY_LIMIT, SHORT_TERM_MEMORY_LIMIT, ROLEPLAY)
 character.change_user_data(USER_NAME, USER_PERSONA)
