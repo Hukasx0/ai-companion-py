@@ -56,7 +56,7 @@ jobs:
       - name: Install Rust
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.70.0
-          export PATH="$HOME/.cargo/bin:$PATH"
+          $env:PATH="$env:USERPROFILE\.cargo\bin;$env:PATH"
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
