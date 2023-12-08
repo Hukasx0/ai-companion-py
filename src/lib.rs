@@ -298,18 +298,23 @@ impl Companion {
     }
 
     #[staticmethod]
-    fn import_character_card(character_card_path: String) -> PyResult<()> {
-        let mut card_file = File::open(character_card_path).expect("File at this path does not exist");
-        let mut data = Vec::new();
-        match card_file.read_to_end(&mut data) {
-            Ok(_) => {},
-            Err(e) => {
-                return Err(pyo3::exceptions::PyValueError::new_err(format!("Error while reading character card file: {:?}", e)));
-            }
-        };
-        let text_chunk_start = data.windows(9).position(|window| window == b"tEXtchara").expect("Looks like this image does not contain character data");
-        let text_chunk_end = data.windows(4).rposition(|window| window == b"IEND").expect("Looks like this image does not contain character data");
-        let character_base64 = &data[text_chunk_start + 10..text_chunk_end - 8];
+    fn import_character_card(character_card_path: &str) -> PyResult<()> {
+        let decoder = png::Decoder::new(File::open(character_card_path)?);
+        let reader = decoder.read_info().unwrap();
+        let character_base64_option: Option<String> = reader.info().uncompressed_latin1_text.iter()
+            .filter(|text_chunk| text_chunk.keyword == "chara")
+            .map(|text_chunk| text_chunk.text.clone())
+            .next();
+            let character_base64: String = match character_base64_option {
+                Some(v) => v,
+                None => {
+                    let mut f_buffer = Vec::new();
+                    File::open(character_card_path)?.read_to_end(&mut f_buffer)?;
+                    let text_chunk_start = f_buffer.windows(9).position(|window| window == b"tEXtchara").ok_or_else(|| pyo3::exceptions::PyValueError::new_err("No tEXt chunk with name 'chara' found"))?;
+                    let text_chunk_end = f_buffer.windows(4).rposition(|window| window == b"IEND").ok_or_else(|| pyo3::exceptions::PyValueError::new_err("No tEXt chunk with name 'chara' found"))?;
+                    String::from_utf8_lossy(&f_buffer[text_chunk_start + 10..text_chunk_end - 8]).to_string()
+                }
+            };
         let engine = GeneralPurpose::new(&STANDARD, GeneralPurposeConfig::new());
         let character_bytes = match engine.decode(character_base64) {
             Ok(b) => b,
