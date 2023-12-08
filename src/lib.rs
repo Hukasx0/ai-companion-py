@@ -13,7 +13,7 @@ use prompt::{prompt_rs, Companion};
 
 #[pymethods]
 impl Companion {
-    fn load_model(&mut self, ai_model_path: &str) -> PyResult<()> {
+    fn load_model(&mut self, ai_model_path: &str, use_gpu: bool) -> PyResult<()> {
         if ai_model_path.ends_with(".bin") {
             self.is_llama2 = ai_model_path.contains("llama");
         } else {
@@ -22,7 +22,11 @@ impl Companion {
         let llama = llm::load::<llm::models::Llama>(
             std::path::Path::new(ai_model_path),
             llm::TokenizerSource::Embedded,
-            llm::ModelParameters::default(),
+            llm::ModelParameters {
+                prefer_mmap: true,
+                use_gpu: use_gpu,
+                ..Default::default()
+            },
             load_progress_callback
         ).unwrap_or_else(|err| panic!("Failed to load model: {err}"));
         self.ai_model = Some(llama);
